@@ -2,3 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 @import "tailwindcss";
+
+html {
+  scrollbar-gutter: stable both-edges;
+  background-color: #09090b;
+}
+
+body {
+  overflow-y: scroll;
+  background-color: #09090b;
+}

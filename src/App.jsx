@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Eye, EyeOff, Copy, ExternalLink, Plus, Lock, Globe, Server, 
+  Eye, EyeOff, Copy, ExternalLink, Plus, Lock, Globe, Github,
   LogOut, Trash2, Check, Home, LayoutGrid, CheckSquare, Search, 
   Calendar, Clock, BarChart3, AlertCircle, Pencil, Code2, Terminal, X, Mail
 } from 'lucide-react';
@@ -60,11 +60,12 @@ const MOCK_PROJECTS = [
 ];
 
 const MOCK_TASKS = [
-  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', dueDate: '2026-03-01', completed: false },
-  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', dueDate: '2026-02-28', completed: false },
-  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', dueDate: '2026-02-25', completed: true },
-  { id: 4, title: 'Renovar dominio', category: 'Administración', dueDate: '2026-03-15', completed: false },
-  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', dueDate: '2026-03-05', completed: true },
+  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', dueDate: '2026-03-01', completed: false, projectId: 1 },
+  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', dueDate: '2026-02-28', completed: false, projectId: 1 },
+  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', dueDate: '2026-02-25', completed: true, projectId: 2 },
+  { id: 4, title: 'Renovar dominio', category: 'Administración', dueDate: '2026-03-15', completed: false, projectId: 3 },
+  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', dueDate: '2026-03-05', completed: true, projectId: 2 },
+  { id: 6, title: 'Revisar formularios de contacto', category: 'Desarrollo', dueDate: '2026-03-08', completed: false },
 ];
 
 const MOCK_SNIPPETS = [
@@ -75,10 +76,48 @@ const MOCK_SNIPPETS = [
   }
 ];
 
+const BrandIcon = ({ className = '' }) => (
+  <img
+    src={`${import.meta.env.BASE_URL}K.ico`}
+    alt="K"
+    className={`block rounded-md ${className}`}
+  />
+);
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'projects', 'tasks'
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
+
+  const tabOrder = ['projects', 'home', 'tasks'];
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const handleKeyDown = (event) => {
+      const target = event.target;
+      const isEditableTarget =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT');
+
+      if (isEditableTarget) return;
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const currentIndex = tabOrder.indexOf(activeTab);
+        const safeIndex = currentIndex === -1 ? 0 : currentIndex;
+        const delta = event.key === 'ArrowLeft' ? -1 : 1;
+        const nextIndex = (safeIndex + delta + tabOrder.length) % tabOrder.length;
+        setActiveTab(tabOrder[nextIndex]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, isAuthenticated, tabOrder]);
   
   // Carga inicial desde localStorage o Mocks
   const [projects, setProjects] = useState(() => {
@@ -110,9 +149,14 @@ export default function App() {
       <nav className="bg-zinc-950/80 backdrop-blur-md border-b border-zinc-900 px-6 py-4 flex items-center justify-between sticky top-0 z-20 transition-all duration-300">
         {/* Izquierda: Logo */}
         <div className="flex items-center gap-3 w-1/3">
-          <div className="bg-zinc-100 p-2 rounded-lg transition-transform hover:scale-105 cursor-default">
-            <Server className="w-5 h-5 text-zinc-950" />
-          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            className="p-2 rounded-lg transition-transform hover:scale-105"
+            title="Ir al inicio"
+          >
+            <BrandIcon className="w-8 h-8" />
+          </button>
           <h1 className="text-xl font-bold text-white tracking-tight hidden lg:block">
             KodePortal
           </h1>
@@ -136,7 +180,7 @@ export default function App() {
             className="flex items-center justify-center w-10 h-10 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-lg transition-all duration-300 group"
             title="Abrir GitHub"
           >
-            <Globe className="w-5 h-5 group-hover:scale-110 transition-transform" />
+            <Github className="w-5 h-5 group-hover:scale-110 transition-transform" />
           </a>
           <a 
             href="https://mail.google.com/"
@@ -169,7 +213,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 md:p-8">
         {activeTab === 'home' && <HomeView projects={projects} tasks={tasks} onNavigate={setActiveTab} />}
         {activeTab === 'projects' && <ProjectsView projects={projects} setProjects={setProjects} />}
-        {activeTab === 'tasks' && <TasksView tasks={tasks} setTasks={setTasks} />}
+        {activeTab === 'tasks' && <TasksView tasks={tasks} setTasks={setTasks} projects={projects} />}
       </main>
 
       {/* Panel lateral de Snippets */}
@@ -405,7 +449,7 @@ function ProjectsView({ projects, setProjects }) {
 
       {filteredProjects.length === 0 ? (
         <div className="text-center py-24 bg-zinc-900/30 rounded-2xl border border-zinc-800/50 border-dashed animate-in zoom-in-95 duration-300">
-          <Server className="w-10 h-10 text-zinc-700 mx-auto mb-4" />
+          <BrandIcon className="w-12 h-12 mx-auto mb-4 opacity-60" />
           <h3 className="text-lg font-medium text-zinc-300">No se encontraron proyectos</h3>
           <p className="text-zinc-500 mt-1 text-sm">Prueba con otra búsqueda o añade un nuevo proyecto.</p>
         </div>
@@ -439,15 +483,33 @@ function ProjectsView({ projects, setProjects }) {
 }
 
 // --- 3. VISTA: TAREAS ---
-function TasksView({ tasks, setTasks }) {
+function TasksView({ tasks, setTasks, projects }) {
   const [modalState, setModalState] = useState({ isOpen: false, task: null });
   const [filter, setFilter] = useState('all'); // all, pending, completed
+  const [viewMode, setViewMode] = useState('list'); // list, calendar
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedProjectId, setSelectedProjectId] = useState('all');
+  const [selectedProjectFocusId, setSelectedProjectFocusId] = useState(null);
+  const [showAgenda, setShowAgenda] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const projectById = projects.reduce((acc, project) => {
+    acc[project.id] = project;
+    return acc;
+  }, {});
 
   const handleSaveTask = (taskData) => {
+    const normalizedTask = {
+      ...taskData,
+      projectId: taskData.projectId ? Number(taskData.projectId) : undefined
+    };
     if (modalState.task) {
-      setTasks(tasks.map(t => t.id === taskData.id ? taskData : t));
+      setTasks(tasks.map(t => t.id === normalizedTask.id ? normalizedTask : t));
     } else {
-      setTasks([...tasks, { ...taskData, id: Date.now(), completed: false }]);
+      setTasks([...tasks, { ...normalizedTask, id: Date.now(), completed: false }]);
     }
     setModalState({ isOpen: false, task: null });
   };
@@ -466,6 +528,8 @@ function TasksView({ tasks, setTasks }) {
       if (filter === 'completed') return t.completed;
       return true;
     })
+    .filter(t => (selectedProjectId === 'all' ? true : t.projectId === Number(selectedProjectId)))
+    .filter(t => (selectedDate ? t.dueDate === selectedDate : true))
     .sort((a, b) => {
       if (a.completed === b.completed) {
         return new Date(a.dueDate) - new Date(b.dueDate);
@@ -473,45 +537,59 @@ function TasksView({ tasks, setTasks }) {
       return a.completed ? 1 : -1;
     });
 
-  return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out fill-mode-both max-w-4xl mx-auto">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">Calendario de Tareas</h2>
-          <p className="text-zinc-400 text-sm mt-1">Organiza tus mantenimientos, renovaciones y pendientes.</p>
+  const formatMonthLabel = (date) => date.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+  const weekdayShort = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const monthStart = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const monthEnd = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
+  const startWeekDay = monthStart.getDay() === 0 ? 6 : monthStart.getDay() - 1;
+  const daysInMonth = monthEnd.getDate();
+
+  const goToMonth = (direction) => {
+    const next = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + direction, 1);
+    setCalendarMonth(next);
+    setSelectedDate(null);
+  };
+
+  const tasksByDate = tasks.reduce((acc, task) => {
+    if (!acc[task.dueDate]) acc[task.dueDate] = [];
+    acc[task.dueDate].push(task);
+    return acc;
+  }, {});
+
+  const pendingByProject = projects.map(project => {
+    const pendingCount = tasks.filter(task => !task.completed && task.projectId === project.id).length;
+    return { project, pendingCount };
+  });
+
+  const pendingProjects = pendingByProject.filter(item => item.pendingCount > 0);
+
+  useEffect(() => {
+    if (selectedProjectFocusId === null && pendingProjects.length > 0) {
+      setSelectedProjectFocusId(pendingProjects[0].project.id);
+    }
+  }, [pendingProjects, selectedProjectFocusId]);
+
+  const focusProject = selectedProjectFocusId ? projectById[selectedProjectFocusId] : null;
+  const focusTasks = tasks
+    .filter(task => task.projectId === selectedProjectFocusId)
+    .sort((a, b) => {
+      if (a.completed === b.completed) {
+        return new Date(a.dueDate) - new Date(b.dueDate);
+      }
+      return a.completed ? 1 : -1;
+    });
+
+  const renderTaskList = (list, emptyMessage) => (
+    <div className="space-y-3">
+      {list.length === 0 ? (
+        <div className="text-center py-12 bg-zinc-900/30 rounded-2xl border border-zinc-800/50 border-dashed animate-in zoom-in-95 duration-300">
+          <CheckSquare className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
+          <p className="text-zinc-500 text-sm">{emptyMessage}</p>
         </div>
-        <button 
-          onClick={() => setModalState({ isOpen: true, task: null })}
-          className="flex items-center gap-2 bg-zinc-100 hover:bg-white text-zinc-950 px-5 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-[1.02] shadow-sm"
-        >
-          <Plus className="w-5 h-5" /> Nueva Tarea
-        </button>
-      </div>
-
-      <div className="flex gap-2 mb-6 border-b border-zinc-800/80 pb-4">
-        {['all', 'pending', 'completed'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${
-              filter === f 
-                ? 'bg-zinc-800 text-white shadow-sm' 
-                : 'bg-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
-            }`}
-          >
-            {f === 'all' ? 'Todas' : f === 'pending' ? 'Pendientes' : 'Completadas'}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-3">
-        {filteredTasks.length === 0 ? (
-          <div className="text-center py-16 bg-zinc-900/30 rounded-2xl border border-zinc-800/50 border-dashed animate-in zoom-in-95 duration-300">
-            <CheckSquare className="w-10 h-10 text-zinc-700 mx-auto mb-3" />
-            <p className="text-zinc-500 text-sm">No hay tareas que mostrar en esta vista.</p>
-          </div>
-        ) : (
-          filteredTasks.map((task, index) => (
+      ) : (
+        list.map((task, index) => {
+          const project = task.projectId ? projectById[task.projectId] : null;
+          return (
             <div 
               key={task.id} 
               className={`group flex items-center justify-between p-4 rounded-xl border transition-all duration-300 animate-in fade-in slide-in-from-bottom-2 fill-mode-both ${
@@ -532,10 +610,16 @@ function TasksView({ tasks, setTasks }) {
                   <h4 className={`font-medium truncate text-sm transition-colors duration-300 ${task.completed ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
                     {task.title}
                   </h4>
-                  <div className="flex items-center gap-3 mt-1.5">
+                  <div className="flex flex-wrap items-center gap-2 mt-1.5">
                     <span className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-400 font-medium">
                       {task.category}
                     </span>
+                    {project && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium flex items-center gap-1">
+                        <span>{project.emoji}</span>
+                        <span className="truncate max-w-[140px]">{project.name}</span>
+                      </span>
+                    )}
                     <span className={`text-[11px] font-mono flex items-center gap-1 transition-colors ${
                       !task.completed && new Date(task.dueDate) < new Date() ? 'text-amber-500' : 'text-zinc-500'
                     }`}>
@@ -561,15 +645,269 @@ function TasksView({ tasks, setTasks }) {
                 </button>
               </div>
             </div>
-          ))
+          );
+        })
+      )}
+    </div>
+  );
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out fill-mode-both max-w-4xl mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Tareas</h2>
+          <p className="text-zinc-400 text-sm mt-1">Selecciona un proyecto con pendientes o abre la agenda completa.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowAgenda(!showAgenda)}
+            className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 px-5 py-2.5 rounded-xl font-medium transition-all duration-300 border border-zinc-800"
+          >
+            <Calendar className="w-5 h-5" /> {showAgenda ? 'Cerrar agenda' : 'Ver agenda'}
+          </button>
+          <button 
+            onClick={() => setModalState({ isOpen: true, task: null })}
+            className="flex items-center gap-2 bg-zinc-100 hover:bg-white text-zinc-950 px-5 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-[1.02] shadow-sm"
+          >
+            <Plus className="w-5 h-5" /> Nueva Tarea
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider">Proyectos con pendientes</h3>
+          <span className="text-xs text-zinc-500">{pendingProjects.length} activos</span>
+        </div>
+        {pendingProjects.length === 0 ? (
+          <div className="text-center py-8 text-zinc-500 text-sm">No hay proyectos con tareas pendientes.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {pendingProjects.map(({ project, pendingCount }) => (
+              <button
+                key={project.id}
+                onClick={() => setSelectedProjectFocusId(project.id)}
+                className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${
+                  selectedProjectFocusId === project.id
+                    ? 'bg-zinc-100 text-zinc-950 border-zinc-100'
+                    : 'bg-zinc-950/60 text-zinc-300 border-zinc-800 hover:border-zinc-600'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xl">{project.emoji}</span>
+                  <span className="text-sm font-medium truncate">{project.name}</span>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${
+                  selectedProjectFocusId === project.id ? 'bg-zinc-200 text-zinc-900' : 'bg-zinc-800 text-zinc-200'
+                }`}>
+                  {pendingCount}
+                </span>
+              </button>
+            ))}
+          </div>
         )}
       </div>
+
+      <div className="mb-10">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">
+            {focusProject ? `Tareas de ${focusProject.name}` : 'Selecciona un proyecto'}
+          </h3>
+          {focusProject && (
+            <span className="text-xs text-zinc-400">{focusTasks.length} tareas</span>
+          )}
+        </div>
+        {renderTaskList(
+          focusProject ? focusTasks : [],
+          focusProject ? 'No hay tareas para este proyecto.' : 'Selecciona un proyecto para ver sus tareas.'
+        )}
+      </div>
+
+      {showAgenda && (
+        <div className="bg-zinc-900/40 border border-zinc-800 rounded-2xl p-4 sm:p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-white">Agenda completa</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-zinc-500 hidden sm:inline">Filtros y calendario</span>
+              <button
+                onClick={() => setShowAgenda(false)}
+                className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                title="Cerrar agenda"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6 border-b border-zinc-800/80 pb-4">
+            <div className="flex items-center gap-2">
+              {[{ key: 'all', icon: <CheckSquare className="w-4 h-4" />, label: 'Todas' }, { key: 'pending', icon: <Clock className="w-4 h-4" />, label: 'Pendientes' }, { key: 'completed', icon: <Check className="w-4 h-4" />, label: 'Completadas' }].map(item => (
+                <button
+                  key={item.key}
+                  onClick={() => setFilter(item.key)}
+                  title={item.label}
+                  className={`p-2 rounded-lg transition-all duration-300 ${
+                    filter === item.key
+                      ? 'bg-zinc-800 text-white shadow-sm'
+                      : 'bg-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
+                  }`}
+                >
+                  {item.icon}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode('list')}
+                title="Lista"
+                className={`p-2 rounded-lg transition-all duration-300 ${
+                  viewMode === 'list'
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'bg-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('calendar')}
+                title="Calendario"
+                className={`p-2 rounded-lg transition-all duration-300 ${
+                  viewMode === 'calendar'
+                    ? 'bg-zinc-800 text-white shadow-sm'
+                    : 'bg-transparent text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 mb-6">
+            <div className="flex flex-wrap gap-2 items-center">
+              <button
+                onClick={() => setSelectedProjectId('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  selectedProjectId === 'all'
+                    ? 'bg-zinc-100 text-zinc-950'
+                    : 'bg-zinc-950/60 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                Todos los proyectos
+              </button>
+              {pendingByProject.map(({ project, pendingCount }) => (
+                <button
+                  key={project.id}
+                  onClick={() => setSelectedProjectId(String(project.id))}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    Number(selectedProjectId) === project.id
+                      ? 'bg-zinc-100 text-zinc-950'
+                      : 'bg-zinc-950/60 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  <span>{project.emoji}</span>
+                  <span className="max-w-[140px] truncate">{project.name}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-200">
+                    {pendingCount}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {viewMode === 'calendar' && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-6 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => goToMonth(-1)}
+                    className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                  >
+                    ←
+                  </button>
+                  <h3 className="text-lg font-semibold text-white capitalize">{formatMonthLabel(calendarMonth)}</h3>
+                  <button
+                    onClick={() => goToMonth(1)}
+                    className="px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                  >
+                    →
+                  </button>
+                </div>
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="text-sm text-zinc-400 hover:text-white transition-colors"
+                >
+                  Mostrar todas
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-2 text-[11px] text-zinc-500 mb-2">
+                {weekdayShort.map(label => (
+                  <div key={label} className="text-center uppercase tracking-wider">
+                    {label}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-2">
+                {Array.from({ length: startWeekDay }).map((_, idx) => (
+                  <div key={`empty-${idx}`} className="h-20 bg-zinc-950/40 border border-zinc-900 rounded-xl"></div>
+                ))}
+                {Array.from({ length: daysInMonth }).map((_, dayIndex) => {
+                  const dayNumber = dayIndex + 1;
+                  const dateKey = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), dayNumber)
+                    .toISOString()
+                    .split('T')[0];
+                  const dayTasks = (tasksByDate[dateKey] || []).filter(task => (
+                    selectedProjectId === 'all' ? true : task.projectId === Number(selectedProjectId)
+                  ));
+                  const isSelected = selectedDate === dateKey;
+                  return (
+                    <button
+                      key={dateKey}
+                      onClick={() => setSelectedDate(isSelected ? null : dateKey)}
+                      className={`h-20 p-2 rounded-xl border text-left transition-all ${
+                        isSelected
+                          ? 'bg-zinc-800 border-zinc-600'
+                          : 'bg-zinc-950/60 border-zinc-900 hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-zinc-400 font-mono">{dayNumber}</span>
+                        {dayTasks.length > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-200">
+                            {dayTasks.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        {dayTasks.slice(0, 2).map(task => (
+                          <div key={task.id} className="text-[10px] text-zinc-300 truncate leading-tight">
+                            {task.title}
+                          </div>
+                        ))}
+                        {dayTasks.length > 2 && (
+                          <div className="text-[10px] text-zinc-500">+{dayTasks.length - 2} más</div>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-[70vh] overflow-y-auto pr-1">
+            {renderTaskList(filteredTasks, 'No hay tareas que mostrar en esta vista.')}
+          </div>
+        </div>
+      )}
 
       {modalState.isOpen && (
         <TaskModal 
           initialData={modalState.task}
           onClose={() => setModalState({ isOpen: false, task: null })} 
-          onSave={handleSaveTask} 
+          onSave={handleSaveTask}
+          projects={projects}
         />
       )}
     </div>
@@ -715,8 +1053,8 @@ function ProjectModal({ initialData, onClose, onSave }) {
   );
 }
 
-function TaskModal({ initialData, onClose, onSave }) {
-  const [formData, setFormData] = useState(initialData || { title: '', category: 'Mantenimiento', dueDate: new Date().toISOString().split('T')[0] });
+function TaskModal({ initialData, onClose, onSave, projects }) {
+  const [formData, setFormData] = useState(initialData || { title: '', category: 'Mantenimiento', dueDate: new Date().toISOString().split('T')[0], projectId: '' });
 
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -735,7 +1073,7 @@ function TaskModal({ initialData, onClose, onSave }) {
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none transition-colors text-sm" />
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Categoría</label>
               <select name="category" value={formData.category} onChange={handleChange} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none appearance-none text-sm transition-colors">
@@ -750,6 +1088,23 @@ function TaskModal({ initialData, onClose, onSave }) {
               <input required type="date" name="dueDate" value={formData.dueDate} onChange={handleChange}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none color-scheme-dark text-sm transition-colors" />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Proyecto vinculado</label>
+            <select
+              name="projectId"
+              value={formData.projectId}
+              onChange={handleChange}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none appearance-none text-sm transition-colors"
+            >
+              <option value="">Sin proyecto</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.emoji} {project.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex gap-3 mt-8 pt-4 border-t border-zinc-800/50">
@@ -788,8 +1143,8 @@ function LoginScreen({ onLogin }) {
       <div className="w-full max-w-md relative z-10">
         {/* Cabecera / Logo */}
         <div className="flex flex-col items-center mb-8 animate-in fade-in slide-in-from-bottom-8 duration-700 ease-out">
-          <div className="bg-zinc-100 p-3.5 rounded-2xl mb-5 shadow-xl shadow-zinc-100/5">
-            <Server className="w-8 h-8 text-zinc-950" />
+          <div className="p-3.5 rounded-2xl mb-5">
+            <BrandIcon className="w-10 h-10" />
           </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight">KodePortal</h1>
           <p className="text-zinc-500 font-mono text-sm mt-2 flex items-center gap-2">
