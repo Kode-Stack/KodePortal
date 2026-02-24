@@ -127,8 +127,17 @@ export default function App() {
           </div>
         </div>
 
-        {/* Derecha: Correo, Snippets y Cerrar Sesión */}
+        {/* Derecha: GitHub, Correo, Snippets y Cerrar Sesión */}
         <div className="w-1/3 flex justify-end gap-1 sm:gap-2">
+          <a 
+            href="https://github.com/Kode-Stack"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center w-10 h-10 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-lg transition-all duration-300 group"
+            title="Abrir GitHub"
+          >
+            <Globe className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          </a>
           <a 
             href="https://mail.google.com/"
             target="_blank"
