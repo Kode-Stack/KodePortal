@@ -85,7 +85,9 @@ const BrandIcon = ({ className = '' }) => (
 );
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('kodeportal_isAuthenticated') === 'true';
+  });
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'projects', 'tasks'
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
 
@@ -140,7 +142,14 @@ export default function App() {
 
   // --- Vista de Login ---
   if (!isAuthenticated) {
-    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+    return (
+      <LoginScreen
+        onLogin={() => {
+          localStorage.setItem('kodeportal_isAuthenticated', 'true');
+          setIsAuthenticated(true);
+        }}
+      />
+    );
   }
 
   return (
@@ -199,7 +208,10 @@ export default function App() {
             <Code2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
           </button>
           <button 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={() => {
+              localStorage.removeItem('kodeportal_isAuthenticated');
+              setIsAuthenticated(false);
+            }}
             className="flex items-center gap-2 text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-lg transition-all duration-300 text-sm font-medium group"
             title="Cerrar Sesión"
           >
