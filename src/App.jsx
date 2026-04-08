@@ -25,6 +25,61 @@ const copyToClipboard = (text, setCopiedState) => {
   document.body.removeChild(textArea);
 };
 
+const getTodayDateString = () => {
+  const now = new Date();
+  const timezoneOffsetMs = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
+};
+
+const normalizeTaskPriority = (priority) => {
+  const normalizedPriority = String(priority || '').toUpperCase();
+  return normalizedPriority === 'P0' ? 'P0' : 'P1';
+};
+
+const normalizeTask = (task) => ({
+  ...task,
+  priority: normalizeTaskPriority(task?.priority)
+});
+
+const isTaskHighPriority = (task) => normalizeTaskPriority(task?.priority) === 'P0';
+
+const isTaskUrgent = (task, today = getTodayDateString()) => {
+  if (!task?.dueDate) return false;
+  return task.dueDate <= today;
+};
+
+const sortTasksByPriorityAndDate = (a, b) => {
+  const priorityDiff = (isTaskHighPriority(a) ? 0 : 1) - (isTaskHighPriority(b) ? 0 : 1);
+  if (priorityDiff !== 0) return priorityDiff;
+  return new Date(a.dueDate) - new Date(b.dueDate);
+};
+
+const buildEisenhowerQuadrants = (tasks, today = getTodayDateString()) => {
+  return tasks
+    .filter(task => !task.completed)
+    .reduce((acc, task) => {
+      const urgent = isTaskUrgent(task, today);
+      const highPriority = isTaskHighPriority(task);
+
+      if (urgent && highPriority) {
+        acc.doNow.push(task);
+      } else if (!urgent && highPriority) {
+        acc.plan.push(task);
+      } else if (urgent && !highPriority) {
+        acc.delegate.push(task);
+      } else {
+        acc.eliminate.push(task);
+      }
+
+      return acc;
+    }, {
+      doNow: [],
+      plan: [],
+      delegate: [],
+      eliminate: []
+    });
+};
+
 // --- Datos de prueba iniciales ---
 const MOCK_PROJECTS = [
   {
@@ -60,12 +115,12 @@ const MOCK_PROJECTS = [
 ];
 
 const MOCK_TASKS = [
-  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', dueDate: '2026-03-01', completed: false, projectId: 1 },
-  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', dueDate: '2026-02-28', completed: false, projectId: 1 },
-  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', dueDate: '2026-02-25', completed: true, projectId: 2 },
-  { id: 4, title: 'Renovar dominio', category: 'Administración', dueDate: '2026-03-15', completed: false, projectId: 3 },
-  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', dueDate: '2026-03-05', completed: true, projectId: 2 },
-  { id: 6, title: 'Revisar formularios de contacto', category: 'Desarrollo', dueDate: '2026-03-08', completed: false },
+  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', priority: 'P0', dueDate: '2026-03-01', completed: false, projectId: 1 },
+  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', priority: 'P0', dueDate: '2026-02-28', completed: false, projectId: 1 },
+  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', priority: 'P1', dueDate: '2026-02-25', completed: true, projectId: 2 },
+  { id: 4, title: 'Renovar dominio', category: 'Administración', priority: 'P1', dueDate: '2026-03-15', completed: false, projectId: 3 },
+  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', priority: 'P1', dueDate: '2026-03-05', completed: true, projectId: 2 },
+  { id: 6, title: 'Revisar formularios de contacto', category: 'Desarrollo', priority: 'P0', dueDate: '2026-03-08', completed: false },
 ];
 
 const MOCK_SNIPPETS = [
@@ -88,10 +143,10 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('kodeportal_isAuthenticated') === 'true';
   });
-  const [activeTab, setActiveTab] = useState('home'); // 'home', 'projects', 'tasks'
+  const [activeTab, setActiveTab] = useState('home'); // 'home', 'projects', 'tasks', 'eisenhower'
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
 
-  const tabOrder = ['projects', 'home', 'tasks'];
+  const tabOrder = ['projects', 'home', 'tasks', 'eisenhower'];
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -128,7 +183,8 @@ export default function App() {
   });
   const [tasks, setTasks] = useState(() => {
     const saved = localStorage.getItem('kodeportal_tasks');
-    return saved ? JSON.parse(saved) : MOCK_TASKS;
+    const sourceTasks = saved ? JSON.parse(saved) : MOCK_TASKS;
+    return sourceTasks.map(normalizeTask);
   });
   const [snippets, setSnippets] = useState(() => {
     const saved = localStorage.getItem('kodeportal_snippets');
@@ -177,10 +233,11 @@ export default function App() {
             <TabButton icon={<LayoutGrid className="w-5 h-5"/>} label="Proyectos" isActive={activeTab === 'projects'} onClick={() => setActiveTab('projects')} />
             <TabButton icon={<Home className="w-5 h-5"/>} label="Inicio" isActive={activeTab === 'home'} onClick={() => setActiveTab('home')} />
             <TabButton icon={<CheckSquare className="w-5 h-5"/>} label="Tareas" isActive={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} />
+            <TabButton icon={<BarChart3 className="w-5 h-5"/>} label="Matriz Eisenhower" isActive={activeTab === 'eisenhower'} onClick={() => setActiveTab('eisenhower')} />
           </div>
         </div>
 
-        {/* Derecha: GitHub, Correo, Snippets y Cerrar Sesión */}
+        {/* Derecha: GitHub, Portafolio, Correo, Snippets y Cerrar Sesión */}
         <div className="w-1/3 flex justify-end gap-1 sm:gap-2">
           <a 
             href="https://github.com/Kode-Stack"
@@ -190,6 +247,15 @@ export default function App() {
             title="Abrir GitHub"
           >
             <Github className="w-5 h-5 group-hover:scale-110 transition-transform" />
+          </a>
+          <a 
+            href="https://kode-khaki.vercel.app/"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-center w-10 h-10 text-zinc-400 hover:text-white hover:bg-zinc-900 rounded-lg transition-all duration-300 group"
+            title="Abrir Portafolio"
+          >
+            <Globe className="w-5 h-5 group-hover:scale-110 transition-transform" />
           </a>
           <a 
             href="https://mail.google.com/"
@@ -226,6 +292,7 @@ export default function App() {
         {activeTab === 'home' && <HomeView projects={projects} tasks={tasks} onNavigate={setActiveTab} />}
         {activeTab === 'projects' && <ProjectsView projects={projects} setProjects={setProjects} />}
         {activeTab === 'tasks' && <TasksView tasks={tasks} setTasks={setTasks} projects={projects} />}
+        {activeTab === 'eisenhower' && <EisenhowerView tasks={tasks} projects={projects} onNavigate={setActiveTab} />}
       </main>
 
       {/* Panel lateral de Snippets */}
@@ -263,11 +330,41 @@ function TabButton({ icon, label, isActive, onClick }) {
 
 // --- 1. VISTA: INICIO (DASHBOARD) ---
 function HomeView({ projects, tasks, onNavigate }) {
+  const today = getTodayDateString();
   const recentProjects = [...projects].sort((a, b) => b.createdAt - a.createdAt).slice(0, 3);
   const upcomingTasks = tasks
     .filter(t => !t.completed)
-    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+    .sort(sortTasksByPriorityAndDate)
     .slice(0, 4);
+  const quadrants = buildEisenhowerQuadrants(tasks, today);
+  const totalEisenhowerPending = Object.values(quadrants).reduce((sum, list) => sum + list.length, 0);
+
+  const quadrantCards = [
+    {
+      key: 'doNow',
+      title: 'Hazlo YA',
+      subtitle: 'Urgente + P0',
+      className: 'border-red-500/30 bg-red-500/[0.07]'
+    },
+    {
+      key: 'plan',
+      title: 'Planifica',
+      subtitle: 'No urgente + P0',
+      className: 'border-emerald-500/30 bg-emerald-500/[0.07]'
+    },
+    {
+      key: 'delegate',
+      title: 'Delega/Simplifica',
+      subtitle: 'Urgente + P1',
+      className: 'border-amber-500/30 bg-amber-500/[0.07]'
+    },
+    {
+      key: 'eliminate',
+      title: 'Elimina',
+      subtitle: 'No urgente + P1',
+      className: 'border-zinc-700 bg-zinc-950/60'
+    }
+  ];
 
   const taskStats = tasks.reduce((acc, task) => {
     if (!acc[task.category]) acc[task.category] = { total: 0, completed: 0 };
@@ -350,8 +447,19 @@ function HomeView({ projects, tasks, onNavigate }) {
               <div key={task.id} className="bg-zinc-950 border border-zinc-800/80 p-4 rounded-xl border-l-2 border-l-zinc-300 hover:border-l-zinc-100 transition-colors">
                 <p className="font-medium text-sm text-zinc-100 mb-2 leading-tight">{task.title}</p>
                 <div className="flex justify-between items-center mt-1">
-                  <span className="text-xs px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 font-medium border border-zinc-800">{task.category}</span>
-                  <span className="text-xs text-amber-400/90 flex items-center gap-1 font-mono">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2 py-1 rounded-md font-semibold border ${
+                      isTaskHighPriority(task)
+                        ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                        : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                    }`}>
+                      {normalizeTaskPriority(task.priority)}
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded-md bg-zinc-900 text-zinc-400 font-medium border border-zinc-800">{task.category}</span>
+                  </div>
+                  <span className={`text-xs flex items-center gap-1 font-mono ${
+                    isTaskUrgent(task) ? 'text-amber-400/90' : 'text-zinc-500'
+                  }`}>
                     <Clock className="w-3 h-3" /> {task.dueDate}
                   </span>
                 </div>
@@ -364,6 +472,196 @@ function HomeView({ projects, tasks, onNavigate }) {
             )}
           </div>
         </div>
+      </div>
+
+      <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-sm transition-all hover:border-zinc-700/50">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+          <div>
+            <h3 className="text-lg font-medium text-white flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-zinc-400" /> Matriz de Eisenhower
+            </h3>
+            <p className="text-zinc-400 text-sm mt-1">
+              Resumen automático por urgencia y prioridad.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-950 border border-zinc-800 text-zinc-300 font-mono">
+              {totalEisenhowerPending} pendientes
+            </span>
+            <button
+              onClick={() => onNavigate('eisenhower')}
+              className="text-sm bg-zinc-100 hover:bg-white text-zinc-950 px-3.5 py-2 rounded-lg font-medium transition-colors"
+            >
+              Abrir matriz
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {quadrantCards.map((card) => {
+            const cardTasks = quadrants[card.key];
+            const firstTask = cardTasks.slice().sort(sortTasksByPriorityAndDate)[0];
+
+            return (
+              <article key={card.key} className={`rounded-xl border p-3.5 ${card.className}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-zinc-100">{card.title}</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">{card.subtitle}</p>
+                  </div>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-900/80 border border-zinc-700 text-zinc-200 font-mono">
+                    {cardTasks.length}
+                  </span>
+                </div>
+
+                <div className="mt-3 min-h-[36px]">
+                  {firstTask ? (
+                    <>
+                      <p className="text-xs text-zinc-200 truncate">{firstTask.title}</p>
+                      <p className={`text-[11px] font-mono mt-1 ${isTaskUrgent(firstTask, today) ? 'text-amber-300' : 'text-zinc-500'}`}>
+                        {firstTask.dueDate}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-zinc-500">Sin tareas</p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EisenhowerView({ tasks, projects, onNavigate }) {
+  const today = getTodayDateString();
+
+  const projectById = projects.reduce((acc, project) => {
+    acc[project.id] = project;
+    return acc;
+  }, {});
+
+  const quadrants = buildEisenhowerQuadrants(tasks, today);
+
+  const quadrantConfig = [
+    {
+      key: 'doNow',
+      title: 'Hazlo YA',
+      description: 'Urgente + Alta Prioridad (P0)',
+      cardClass: 'border-red-500/40 bg-red-500/[0.06]'
+    },
+    {
+      key: 'plan',
+      title: 'Planifica',
+      description: 'No Urgente + Alta Prioridad',
+      cardClass: 'border-emerald-500/40 bg-emerald-500/[0.06]'
+    },
+    {
+      key: 'delegate',
+      title: 'Delega/Simplifica',
+      description: 'Urgente + Baja Prioridad',
+      cardClass: 'border-amber-500/40 bg-amber-500/[0.06]'
+    },
+    {
+      key: 'eliminate',
+      title: 'Elimina',
+      description: 'No Urgente + Baja Prioridad',
+      cardClass: 'border-zinc-700 bg-zinc-900/50'
+    }
+  ];
+
+  Object.keys(quadrants).forEach((key) => {
+    quadrants[key].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+  });
+
+  const totalPending = Object.values(quadrants).reduce((sum, list) => sum + list.length, 0);
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 ease-out fill-mode-both">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Matriz de Eisenhower</h2>
+          <p className="text-zinc-400 text-sm mt-1">
+            Clasificación automática por urgencia y prioridad. Urgente = fecha límite hoy o vencida.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 font-medium">
+            {totalPending} tareas pendientes
+          </span>
+          <button
+            onClick={() => onNavigate('tasks')}
+            className="flex items-center gap-2 bg-zinc-100 hover:bg-white text-zinc-950 px-4 py-2.5 rounded-xl font-medium transition-all duration-300"
+          >
+            <CheckSquare className="w-4 h-4" /> Gestionar tareas
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {quadrantConfig.map((quadrant) => {
+          const quadrantTasks = quadrants[quadrant.key];
+
+          return (
+            <section key={quadrant.key} className={`border rounded-2xl p-4 sm:p-5 ${quadrant.cardClass}`}>
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">{quadrant.title}</h3>
+                  <p className="text-xs text-zinc-400 mt-1">{quadrant.description}</p>
+                </div>
+                <span className="text-xs px-2.5 py-1 rounded-full bg-zinc-900/80 border border-zinc-700 text-zinc-200 font-mono">
+                  {quadrantTasks.length}
+                </span>
+              </div>
+
+              {quadrantTasks.length === 0 ? (
+                <div className="text-center py-10 rounded-xl border border-dashed border-zinc-700/70 bg-zinc-950/40">
+                  <p className="text-sm text-zinc-500">Sin tareas en este cuadrante.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {quadrantTasks.map((task) => {
+                    const project = task.projectId ? projectById[task.projectId] : null;
+
+                    return (
+                      <article key={task.id} className="bg-zinc-950/70 border border-zinc-800 rounded-xl p-3.5">
+                        <p className="text-sm font-medium text-zinc-100 leading-tight">{task.title}</p>
+                        <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold ${
+                            isTaskHighPriority(task)
+                              ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          }`}>
+                            {normalizeTaskPriority(task.priority)}
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300">
+                            {task.category}
+                          </span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded-md border flex items-center gap-1 font-mono ${
+                            isTaskUrgent(task, today)
+                              ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
+                              : 'bg-zinc-900 border-zinc-800 text-zinc-400'
+                          }`}>
+                            <Calendar className="w-3 h-3" />
+                            {task.dueDate}
+                          </span>
+                          {project && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300 flex items-center gap-1">
+                              <span>{project.emoji}</span>
+                              <span className="truncate max-w-[140px]">{project.name}</span>
+                            </span>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );
@@ -514,10 +812,10 @@ function TasksView({ tasks, setTasks, projects }) {
   }, {});
 
   const handleSaveTask = (taskData) => {
-    const normalizedTask = {
+    const normalizedTask = normalizeTask({
       ...taskData,
       projectId: taskData.projectId ? Number(taskData.projectId) : undefined
-    };
+    });
     if (modalState.task) {
       setTasks(tasks.map(t => t.id === normalizedTask.id ? normalizedTask : t));
     } else {
@@ -544,7 +842,7 @@ function TasksView({ tasks, setTasks, projects }) {
     .filter(t => (selectedDate ? t.dueDate === selectedDate : true))
     .sort((a, b) => {
       if (a.completed === b.completed) {
-        return new Date(a.dueDate) - new Date(b.dueDate);
+        return sortTasksByPriorityAndDate(a, b);
       }
       return a.completed ? 1 : -1;
     });
@@ -576,17 +874,28 @@ function TasksView({ tasks, setTasks, projects }) {
   const pendingProjects = pendingByProject.filter(item => item.pendingCount > 0);
 
   useEffect(() => {
-    if (selectedProjectFocusId === null && pendingProjects.length > 0) {
+    if (pendingProjects.length === 0) {
+      if (selectedProjectFocusId !== null) {
+        setSelectedProjectFocusId(null);
+      }
+      return;
+    }
+
+    const selectedStillAvailable = pendingProjects.some(item => item.project.id === selectedProjectFocusId);
+    if (!selectedStillAvailable) {
       setSelectedProjectFocusId(pendingProjects[0].project.id);
     }
   }, [pendingProjects, selectedProjectFocusId]);
 
   const focusProject = selectedProjectFocusId ? projectById[selectedProjectFocusId] : null;
-  const focusTasks = tasks
-    .filter(task => task.projectId === selectedProjectFocusId)
+  const focusTasks = (focusProject
+    ? tasks.filter(task => task.projectId === selectedProjectFocusId)
+    : filteredTasks
+  )
+    .slice()
     .sort((a, b) => {
       if (a.completed === b.completed) {
-        return new Date(a.dueDate) - new Date(b.dueDate);
+        return sortTasksByPriorityAndDate(a, b);
       }
       return a.completed ? 1 : -1;
     });
@@ -623,6 +932,13 @@ function TasksView({ tasks, setTasks, projects }) {
                     {task.title}
                   </h4>
                   <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-md border font-semibold ${
+                      isTaskHighPriority(task)
+                        ? 'bg-red-500/20 border-red-500/30 text-red-300'
+                        : 'bg-zinc-950 border-zinc-800 text-zinc-400'
+                    }`}>
+                      {normalizeTaskPriority(task.priority)}
+                    </span>
                     <span className="text-[11px] px-2 py-0.5 rounded-md bg-zinc-950 border border-zinc-800 text-zinc-400 font-medium">
                       {task.category}
                     </span>
@@ -633,7 +949,7 @@ function TasksView({ tasks, setTasks, projects }) {
                       </span>
                     )}
                     <span className={`text-[11px] font-mono flex items-center gap-1 transition-colors ${
-                      !task.completed && new Date(task.dueDate) < new Date() ? 'text-amber-500' : 'text-zinc-500'
+                      !task.completed && isTaskUrgent(task) ? 'text-amber-500' : 'text-zinc-500'
                     }`}>
                       <Calendar className="w-3 h-3" /> {task.dueDate}
                     </span>
@@ -723,15 +1039,13 @@ function TasksView({ tasks, setTasks, projects }) {
       <div className="mb-10">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">
-            {focusProject ? `Tareas de ${focusProject.name}` : 'Selecciona un proyecto'}
+            {focusProject ? `Tareas de ${focusProject.name}` : 'Tareas visibles (todos los proyectos)'}
           </h3>
-          {focusProject && (
-            <span className="text-xs text-zinc-400">{focusTasks.length} tareas</span>
-          )}
+          <span className="text-xs text-zinc-400">{focusTasks.length} tareas</span>
         </div>
         {renderTaskList(
-          focusProject ? focusTasks : [],
-          focusProject ? 'No hay tareas para este proyecto.' : 'Selecciona un proyecto para ver sus tareas.'
+          focusTasks,
+          focusProject ? 'No hay tareas para este proyecto.' : 'No hay tareas para mostrar.'
         )}
       </div>
 
@@ -869,9 +1183,10 @@ function TasksView({ tasks, setTasks, projects }) {
                   const dateKey = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), dayNumber)
                     .toISOString()
                     .split('T')[0];
-                  const dayTasks = (tasksByDate[dateKey] || []).filter(task => (
-                    selectedProjectId === 'all' ? true : task.projectId === Number(selectedProjectId)
-                  ));
+                  const dayTasks = (tasksByDate[dateKey] || [])
+                    .filter(task => (selectedProjectId === 'all' ? true : task.projectId === Number(selectedProjectId)))
+                    .slice()
+                    .sort(sortTasksByPriorityAndDate);
                   const isSelected = selectedDate === dateKey;
                   return (
                     <button
@@ -1066,7 +1381,15 @@ function ProjectModal({ initialData, onClose, onSave }) {
 }
 
 function TaskModal({ initialData, onClose, onSave, projects }) {
-  const [formData, setFormData] = useState(initialData || { title: '', category: 'Mantenimiento', dueDate: new Date().toISOString().split('T')[0], projectId: '' });
+  const [formData, setFormData] = useState(
+    normalizeTask(initialData || {
+      title: '',
+      category: 'Mantenimiento',
+      priority: 'P1',
+      dueDate: getTodayDateString(),
+      projectId: ''
+    })
+  );
 
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -1096,10 +1419,25 @@ function TaskModal({ initialData, onClose, onSave, projects }) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Fecha límite</label>
-              <input required type="date" name="dueDate" value={formData.dueDate} onChange={handleChange}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none color-scheme-dark text-sm transition-colors" />
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Prioridad</label>
+              <select name="priority" value={normalizeTaskPriority(formData.priority)} onChange={handleChange} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none appearance-none text-sm transition-colors">
+                <option value="P0">P0 · Alta prioridad</option>
+                <option value="P1">P1 · Baja prioridad</option>
+              </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">Fecha límite</label>
+            <input required type="date" name="dueDate" value={formData.dueDate} onChange={handleChange}
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-1 focus:ring-zinc-400 focus:outline-none color-scheme-dark text-sm transition-colors" />
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2.5">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Regla de urgencia automática: una tarea es urgente cuando su fecha límite es hoy o ya venció.
+              Combinada con prioridad {normalizeTaskPriority(formData.priority)}, se clasifica en la Matriz de Eisenhower.
+            </p>
           </div>
 
           <div>
