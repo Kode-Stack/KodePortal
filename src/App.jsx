@@ -31,6 +31,20 @@ const getTodayDateString = () => {
   return new Date(now.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
 };
 
+const toLocalDateString = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const shiftDateString = (dateString, days) => {
+  const [year, month, day] = String(dateString).split('-').map(Number);
+  const shiftedDate = new Date(year, month - 1, day);
+  shiftedDate.setDate(shiftedDate.getDate() + days);
+  return toLocalDateString(shiftedDate);
+};
+
 const normalizeTaskPriority = (priority) => {
   const normalizedPriority = String(priority || '').toUpperCase();
   return normalizedPriority === 'P0' ? 'P0' : 'P1';
@@ -48,10 +62,17 @@ const isTaskUrgent = (task, today = getTodayDateString()) => {
   return task.dueDate <= today;
 };
 
+const compareDateStrings = (leftDate, rightDate) => {
+  if (!leftDate && !rightDate) return 0;
+  if (!leftDate) return 1;
+  if (!rightDate) return -1;
+  return String(leftDate).localeCompare(String(rightDate));
+};
+
 const sortTasksByPriorityAndDate = (a, b) => {
   const priorityDiff = (isTaskHighPriority(a) ? 0 : 1) - (isTaskHighPriority(b) ? 0 : 1);
   if (priorityDiff !== 0) return priorityDiff;
-  return new Date(a.dueDate) - new Date(b.dueDate);
+  return compareDateStrings(a?.dueDate, b?.dueDate);
 };
 
 const buildEisenhowerQuadrants = (tasks, today = getTodayDateString()) => {
@@ -114,13 +135,15 @@ const MOCK_PROJECTS = [
   }
 ];
 
+const MOCK_BASE_DATE = getTodayDateString();
+
 const MOCK_TASKS = [
-  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', priority: 'P0', dueDate: '2026-03-01', completed: false, projectId: 1 },
-  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', priority: 'P0', dueDate: '2026-02-28', completed: false, projectId: 1 },
-  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', priority: 'P1', dueDate: '2026-02-25', completed: true, projectId: 2 },
-  { id: 4, title: 'Renovar dominio', category: 'Administración', priority: 'P1', dueDate: '2026-03-15', completed: false, projectId: 3 },
-  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', priority: 'P1', dueDate: '2026-03-05', completed: true, projectId: 2 },
-  { id: 6, title: 'Revisar formularios de contacto', category: 'Desarrollo', priority: 'P0', dueDate: '2026-03-08', completed: false },
+  { id: 1, title: 'Actualizar plugins de WordPress', category: 'Mantenimiento', priority: 'P0', dueDate: shiftDateString(MOCK_BASE_DATE, -14), completed: false, projectId: 1 },
+  { id: 2, title: 'Configurar certificado SSL', category: 'Seguridad', priority: 'P0', dueDate: shiftDateString(MOCK_BASE_DATE, 2), completed: false, projectId: 1 },
+  { id: 3, title: 'Migrar base de datos', category: 'Desarrollo', priority: 'P1', dueDate: shiftDateString(MOCK_BASE_DATE, -20), completed: true, projectId: 2 },
+  { id: 4, title: 'Renovar dominio', category: 'Administración', priority: 'P1', dueDate: shiftDateString(MOCK_BASE_DATE, -1), completed: false, projectId: 3 },
+  { id: 5, title: 'Optimizar imágenes', category: 'Mantenimiento', priority: 'P1', dueDate: shiftDateString(MOCK_BASE_DATE, 10), completed: true, projectId: 2 },
+  { id: 6, title: 'Revisar formularios de contacto', category: 'Desarrollo', priority: 'P1', dueDate: shiftDateString(MOCK_BASE_DATE, 5), completed: false },
 ];
 
 const MOCK_SNIPPETS = [
@@ -131,6 +154,101 @@ const MOCK_SNIPPETS = [
   }
 ];
 
+const PERSISTENCE_KEYS = {
+  isAuthenticated: 'kodeportal_isAuthenticated',
+  projects: 'kodeportal_projects',
+  tasks: 'kodeportal_tasks',
+  snippets: 'kodeportal_snippets'
+};
+
+const PERSISTENCE_DB_NAME = 'kodeportal_persistence_db';
+const PERSISTENCE_STORE_NAME = 'kodeportal_state';
+
+const openPersistenceDb = () => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB no está disponible en este entorno.'));
+      return;
+    }
+
+    const request = window.indexedDB.open(PERSISTENCE_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(PERSISTENCE_STORE_NAME)) {
+        db.createObjectStore(PERSISTENCE_STORE_NAME);
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('No se pudo abrir IndexedDB.'));
+  });
+};
+
+const runPersistenceOperation = async (mode, operation) => {
+  const db = await openPersistenceDb();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(PERSISTENCE_STORE_NAME, mode);
+    const store = transaction.objectStore(PERSISTENCE_STORE_NAME);
+    let settled = false;
+
+    const finishResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const finishReject = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+
+    let request;
+    try {
+      request = operation(store);
+    } catch (error) {
+      finishReject(error);
+      db.close();
+      return;
+    }
+
+    request.onsuccess = () => finishResolve(request.result);
+    request.onerror = () => finishReject(request.error || new Error('Error en operación de IndexedDB.'));
+
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      finishReject(transaction.error || new Error('Error en transacción de IndexedDB.'));
+      db.close();
+    };
+    transaction.onabort = () => {
+      finishReject(transaction.error || new Error('Transacción de IndexedDB abortada.'));
+      db.close();
+    };
+  });
+};
+
+const readPersistedValue = async (key, fallbackValue) => {
+  try {
+    const value = await runPersistenceOperation('readonly', (store) => store.get(key));
+    return value === undefined ? fallbackValue : value;
+  } catch (error) {
+    console.error(`Error leyendo "${key}" en IndexedDB:`, error);
+    return fallbackValue;
+  }
+};
+
+const writePersistedValue = async (key, value) => {
+  try {
+    await runPersistenceOperation('readwrite', (store) => store.put(value, key));
+  } catch (error) {
+    console.error(`Error guardando "${key}" en IndexedDB:`, error);
+  }
+};
+
+const TAB_ORDER = ['projects', 'home', 'tasks', 'eisenhower'];
+
 const BrandIcon = ({ className = '' }) => (
   <img
     src={`${import.meta.env.BASE_URL}K.ico`}
@@ -140,13 +258,45 @@ const BrandIcon = ({ className = '' }) => (
 );
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('kodeportal_isAuthenticated') === 'true';
-  });
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'projects', 'tasks', 'eisenhower'
   const [isSnippetsOpen, setIsSnippetsOpen] = useState(false);
 
-  const tabOrder = ['projects', 'home', 'tasks', 'eisenhower'];
+  // Carga inicial desde IndexedDB o Mocks
+  const [projects, setProjects] = useState(MOCK_PROJECTS);
+  const [tasks, setTasks] = useState(() => MOCK_TASKS.map(normalizeTask));
+  const [snippets, setSnippets] = useState(MOCK_SNIPPETS);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateState = async () => {
+      const [savedAuth, savedProjects, savedTasks, savedSnippets] = await Promise.all([
+        readPersistedValue(PERSISTENCE_KEYS.isAuthenticated, false),
+        readPersistedValue(PERSISTENCE_KEYS.projects, MOCK_PROJECTS),
+        readPersistedValue(PERSISTENCE_KEYS.tasks, MOCK_TASKS),
+        readPersistedValue(PERSISTENCE_KEYS.snippets, MOCK_SNIPPETS)
+      ]);
+
+      if (!isMounted) return;
+
+      setIsAuthenticated(savedAuth === true);
+      setProjects(Array.isArray(savedProjects) ? savedProjects : MOCK_PROJECTS);
+
+      const sourceTasks = Array.isArray(savedTasks) ? savedTasks : MOCK_TASKS;
+      setTasks(sourceTasks.map(normalizeTask));
+
+      setSnippets(Array.isArray(savedSnippets) ? savedSnippets : MOCK_SNIPPETS);
+      setIsHydrated(true);
+    };
+
+    void hydrateState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -164,44 +314,52 @@ export default function App() {
 
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
-        const currentIndex = tabOrder.indexOf(activeTab);
+        const currentIndex = TAB_ORDER.indexOf(activeTab);
         const safeIndex = currentIndex === -1 ? 0 : currentIndex;
         const delta = event.key === 'ArrowLeft' ? -1 : 1;
-        const nextIndex = (safeIndex + delta + tabOrder.length) % tabOrder.length;
-        setActiveTab(tabOrder[nextIndex]);
+        const nextIndex = (safeIndex + delta + TAB_ORDER.length) % TAB_ORDER.length;
+        setActiveTab(TAB_ORDER[nextIndex]);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, isAuthenticated, tabOrder]);
+  }, [activeTab, isAuthenticated]);
   
-  // Carga inicial desde localStorage o Mocks
-  const [projects, setProjects] = useState(() => {
-    const saved = localStorage.getItem('kodeportal_projects');
-    return saved ? JSON.parse(saved) : MOCK_PROJECTS;
-  });
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('kodeportal_tasks');
-    const sourceTasks = saved ? JSON.parse(saved) : MOCK_TASKS;
-    return sourceTasks.map(normalizeTask);
-  });
-  const [snippets, setSnippets] = useState(() => {
-    const saved = localStorage.getItem('kodeportal_snippets');
-    return saved ? JSON.parse(saved) : MOCK_SNIPPETS;
-  });
+  // Efectos para autoguardado en IndexedDB
+  useEffect(() => {
+    if (!isHydrated) return;
+    void writePersistedValue(PERSISTENCE_KEYS.isAuthenticated, isAuthenticated);
+  }, [isAuthenticated, isHydrated]);
 
-  // Efectos para autoguardado local
-  useEffect(() => { localStorage.setItem('kodeportal_projects', JSON.stringify(projects)); }, [projects]);
-  useEffect(() => { localStorage.setItem('kodeportal_tasks', JSON.stringify(tasks)); }, [tasks]);
-  useEffect(() => { localStorage.setItem('kodeportal_snippets', JSON.stringify(snippets)); }, [snippets]);
+  useEffect(() => {
+    if (!isHydrated) return;
+    void writePersistedValue(PERSISTENCE_KEYS.projects, projects);
+  }, [projects, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    void writePersistedValue(PERSISTENCE_KEYS.tasks, tasks);
+  }, [tasks, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    void writePersistedValue(PERSISTENCE_KEYS.snippets, snippets);
+  }, [snippets, isHydrated]);
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-300 flex items-center justify-center">
+        <p className="text-sm font-medium tracking-wide">Cargando datos persistidos...</p>
+      </div>
+    );
+  }
 
   // --- Vista de Login ---
   if (!isAuthenticated) {
     return (
       <LoginScreen
         onLogin={() => {
-          localStorage.setItem('kodeportal_isAuthenticated', 'true');
           setIsAuthenticated(true);
         }}
       />
@@ -275,7 +433,6 @@ export default function App() {
           </button>
           <button 
             onClick={() => {
-              localStorage.removeItem('kodeportal_isAuthenticated');
               setIsAuthenticated(false);
             }}
             className="flex items-center gap-2 text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-lg transition-all duration-300 text-sm font-medium group"
@@ -573,7 +730,7 @@ function EisenhowerView({ tasks, projects, onNavigate }) {
   ];
 
   Object.keys(quadrants).forEach((key) => {
-    quadrants[key].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+    quadrants[key].sort((a, b) => compareDateStrings(a?.dueDate, b?.dueDate));
   });
 
   const totalPending = Object.values(quadrants).reduce((sum, list) => sum + list.length, 0);
@@ -873,23 +1030,15 @@ function TasksView({ tasks, setTasks, projects }) {
 
   const pendingProjects = pendingByProject.filter(item => item.pendingCount > 0);
 
-  useEffect(() => {
-    if (pendingProjects.length === 0) {
-      if (selectedProjectFocusId !== null) {
-        setSelectedProjectFocusId(null);
-      }
-      return;
-    }
-
+  const selectedProjectFocusIdResolved = (() => {
+    if (pendingProjects.length === 0) return null;
     const selectedStillAvailable = pendingProjects.some(item => item.project.id === selectedProjectFocusId);
-    if (!selectedStillAvailable) {
-      setSelectedProjectFocusId(pendingProjects[0].project.id);
-    }
-  }, [pendingProjects, selectedProjectFocusId]);
+    return selectedStillAvailable ? selectedProjectFocusId : pendingProjects[0].project.id;
+  })();
 
-  const focusProject = selectedProjectFocusId ? projectById[selectedProjectFocusId] : null;
+  const focusProject = selectedProjectFocusIdResolved ? projectById[selectedProjectFocusIdResolved] : null;
   const focusTasks = (focusProject
-    ? tasks.filter(task => task.projectId === selectedProjectFocusId)
+    ? tasks.filter(task => task.projectId === selectedProjectFocusIdResolved)
     : filteredTasks
   )
     .slice()
@@ -1016,7 +1165,7 @@ function TasksView({ tasks, setTasks, projects }) {
                 key={project.id}
                 onClick={() => setSelectedProjectFocusId(project.id)}
                 className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${
-                  selectedProjectFocusId === project.id
+                  selectedProjectFocusIdResolved === project.id
                     ? 'bg-zinc-100 text-zinc-950 border-zinc-100'
                     : 'bg-zinc-950/60 text-zinc-300 border-zinc-800 hover:border-zinc-600'
                 }`}
@@ -1026,7 +1175,7 @@ function TasksView({ tasks, setTasks, projects }) {
                   <span className="text-sm font-medium truncate">{project.name}</span>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full ${
-                  selectedProjectFocusId === project.id ? 'bg-zinc-200 text-zinc-900' : 'bg-zinc-800 text-zinc-200'
+                  selectedProjectFocusIdResolved === project.id ? 'bg-zinc-200 text-zinc-900' : 'bg-zinc-800 text-zinc-200'
                 }`}>
                   {pendingCount}
                 </span>
@@ -1180,9 +1329,7 @@ function TasksView({ tasks, setTasks, projects }) {
                 ))}
                 {Array.from({ length: daysInMonth }).map((_, dayIndex) => {
                   const dayNumber = dayIndex + 1;
-                  const dateKey = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), dayNumber)
-                    .toISOString()
-                    .split('T')[0];
+                  const dateKey = toLocalDateString(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), dayNumber));
                   const dayTasks = (tasksByDate[dateKey] || [])
                     .filter(task => (selectedProjectId === 'all' ? true : task.projectId === Number(selectedProjectId)))
                     .slice()
